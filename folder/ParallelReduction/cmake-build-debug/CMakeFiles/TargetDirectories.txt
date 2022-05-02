@@ -1,0 +1,3 @@
+/Users/adamweinstein/MSD/myGitRepo/CS6013/ParallelReduction/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/Users/adamweinstein/MSD/myGitRepo/CS6013/ParallelReduction/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/adamweinstein/MSD/myGitRepo/CS6013/ParallelReduction/cmake-build-debug/CMakeFiles/ParallelReduction.dir
