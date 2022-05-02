@@ -57,15 +57,10 @@ class EncFS(Operations):
 
     """
     def __init__(self, root):
+        
         self.root = root
-        # self.openFiles = {}
-        # self.netFD = 3
-        # p = getpass.getpass(prompt='<password>? ')
- 
-        # if p.lower() == 'password':
-        #     print('Welcome..!!!')
-        # else:
-        #     print('The answer entered by you is incorrect..!!!')
+        self.openFiles = {}
+        self.netFD = 3
 
         #TODO, FINISH ME!!
         
@@ -293,6 +288,8 @@ class EncFS(Operations):
 
     @logged
     def open(self, path, flags):
+        f = open(path, "r")
+        print(f.read())
         """Open a file.
 
         Open a file. If you aren't using file handles, this function should
@@ -308,7 +305,11 @@ class EncFS(Operations):
         
     @logged
     def create(self, path, mode, fi=None):
-        return "FILL ME IN!"
+        try:
+            with open('docs/readme.txt', 'w') as f:
+                f.write('Create a new text file!')
+        except FileNotFoundError:
+            print("The 'docs' directory does not exist")
 
     @logged
     def read(self, path, length, offset, fh):
@@ -357,6 +358,9 @@ class EncFS(Operations):
 
     @logged
     def release(self, path, fh):
+        f = open(self, "r")
+        print(f.readline())
+        f.close()
         """Release is called when FUSE is done with a file.
 
         This is the only FUSE function that doesn't have a directly
@@ -389,6 +393,7 @@ class EncFS(Operations):
 '''
 if __name__ == '__main__':
     print("let's test this thing!......................................")
+    p = getpass(prompt='Password? ')
     from sys import argv
     if len(argv) != 3:
         print('usage: %s <encrypted folder> <mountpoint>' % argv[0])
