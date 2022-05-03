@@ -31,6 +31,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from os.path import exists
+
 log = logging.getLogger(__name__)
 
 
@@ -61,6 +63,7 @@ class EncFS(Operations):
         self.root = root
         self.openFiles = {}
         self.netFD = 3
+        self.membInt = 0
 
         #TODO, FINISH ME!!
         
@@ -144,11 +147,47 @@ class EncFS(Operations):
         """
         full_path = self._full_path(path)
         st = os.lstat(full_path)
-        print("FIXME FIXME: update so that the size reported here is the length of the decrypted data, not the physical file size!")
-        props = dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+        array = self.openFiles[path]
+        if array:
+            size = len(array)-16
+            print("Size of data is : %i", size)
+            props = dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
                'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
+        else:
+            if exists(path):
+                f = open(path, "rb")
+                password = str.encode(self.root)
+                salt = f.read(16)
+                byte = f.read(1)
+                fileAll = bytearray()
+                while byte:
+                    fileAll += byte
+                    byte = f.read(1)
+                f.close()
 
-        '''TODO FINISH ME TO UPDATE THE st_size fiel to the size of the unencrypted content'''
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=salt,
+                    iterations=390000,
+                )
+
+                key = base64.urlsafe_b64encode(kdf.derive(password))
+                k = Fernet(key)
+                k.decrypt(fileAll)
+                size = len(fileAll) - 16
+                print("Size of data is : %i", size)
+                props = dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+                                                                 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size',
+                                                                 'st_uid'))
+            else:
+                return -1
+
+        props['st_size'] = size
+
+        '''TODO FINISH ME TO UPDATE THE st_size field to the size of the unencrypted content'''
+
+
         return props
 
     @logged
@@ -288,28 +327,52 @@ class EncFS(Operations):
 
     @logged
     def open(self, path, flags):
-        f = open(path, "r")
-        print(f.read())
-        """Open a file.
-
-        Open a file. If you aren't using file handles, this function should
-        just check for existence and permissions and return either success or
-        an error code. If you use file handles, you should also allocate any
-        necessary structures and set fi->fh. In addition, fi has some other
-        fields that an advanced filesystem might find useful; see the structure
-        definition in fuse_common.h for very brief commentary.
-
         """
+                Open a file.
+                Open a file. If you aren't using file handles, this function should
+                just check for existence and permissions and return either success or
+                an error code. If you use file handles, you should also allocate any
+                necessary structures and set fi->fh. In addition, fi has some other
+                fields that an advanced filesystem might find useful; see the structure
+                definition in fuse_common.h for very brief commentary.
+                """
+        if exists(path):
+            f = open(path, "rb")
+            password = str.encode(self.root)
+            salt = f.read(16)
+            byte = f.read(1)
+            fileAll = bytearray()
+            while byte:
+                fileAll += byte
+                byte = f.read(1)
+            f.close()
 
-        return "FILL ME IN"
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=390000,
+            )
+
+            key = base64.urlsafe_b64encode(kdf.derive(password))
+            k = Fernet(key)
+            k.decrypt(fileAll)
+            self.membInt += 1
+            self.openFiles[path] = fileAll
+            return self.membInt
+        return -1
         
     @logged
     def create(self, path, mode, fi=None):
         try:
-            with open('docs/readme.txt', 'w') as f:
-                f.write('Create a new text file!')
+            with open(path, 'w') as f:
+                f.close()
+                self.membInt += 1
+                self.openFiles[path] = ""
+                print('%s file made', path)
+                return self.membInt
         except FileNotFoundError:
-            print("The 'docs' directory does not exist")
+            return -1
 
     @logged
     def read(self, path, length, offset, fh):
@@ -321,14 +384,22 @@ class EncFS(Operations):
         the file. Required for any sensible filesystem.
 
         """
-        return "FILL ME IN!!!"
+        if offset>=length:
+            return 0
+        array = self.openFiles[path]
+        buf = array[offset:length]
+        return buf
 
     @logged
     def write(self, path, buf, offset, fh):
         """Write to a file.
 
         """
-        return 'FILL ME IN'
+        array = self.openFiles[path]
+        output = array[0:offset]
+        output += buf
+        output += array[offset+1:]
+        return output
 
     @logged
     def truncate(self, path, length, fh=None):
@@ -339,7 +410,14 @@ class EncFS(Operations):
         filesystems, because recreating a file will first truncate it.
 
         """
-        return 'FILL ME IN!!!'
+        array = self.openFiles[path]
+        newthing = bytearray(length)
+        for i in range(0, length):
+            if array[i]:
+                newthing[i] = array[i]
+            else:
+                newthing[i] = 0
+        return newthing
 
     #skip
     '''
@@ -358,21 +436,37 @@ class EncFS(Operations):
 
     @logged
     def release(self, path, fh):
-        f = open(self, "r")
-        print(f.readline())
-        f.close()
         """Release is called when FUSE is done with a file.
 
-        This is the only FUSE function that doesn't have a directly
-        corresponding system call, although close(2) is related. Release is
-        called when FUSE is completely done with a file; at that point, you can
-        free up any temporarily allocated data structures. The IBM document
-        claims that there is exactly one release per open, but I don't know if
-        that is true.
+                This is the only FUSE function that doesn't have a directly
+                corresponding system call, although close(2) is related. Release is
+                called when FUSE is completely done with a file; at that point, you can
+                free up any temporarily allocated data structures. The IBM document
+                claims that there is exactly one release per open, but I don't know if
+                that is true.
 
-        """
+                """
+        array = self.openFiles[path]
 
-        return 'FILL ME IN'
+        password = str.encode(self.root)
+        salt = os.urandom(16)
+        output = salt
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=390000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(password))
+        k = Fernet(key)
+        output += k.encrypt(array)
+
+        with open(path, 'w') as f:
+            f.write(output)
+            f.close()
+
+        removed_value = self.openFiles.pop(path)
+        return removed_value
     
     #skip
 '''    @logged
@@ -393,7 +487,6 @@ class EncFS(Operations):
 '''
 if __name__ == '__main__':
     print("let's test this thing!......................................")
-    p = getpass(prompt='Password? ')
     from sys import argv
     if len(argv) != 3:
         print('usage: %s <encrypted folder> <mountpoint>' % argv[0])
