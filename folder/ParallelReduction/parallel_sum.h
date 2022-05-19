@@ -1,5 +1,5 @@
 //
-// Created by Adam Weinstein on 4/25/22.
+// Created by Ben Powell on 4/25/22.
 //
 
 #ifndef PARALLELREDUCTION_PARALLEL_SUM_H
